@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  /* Hyperliquid-vibe dark palette — blue/purple accents, near-black chrome */
+  --color-void: #06080d;
+  --color-panel: #0c1017;
+  --color-raised: #12161f;
+  --color-edge: #1d2432;
+  --color-accent: #6d7cff;
+  --color-accent-dim: #4a55c4;
+  --color-up: #2fd4a7;
+  --color-down: #ff5c7a;
+  --color-muted: #8b93a7;
+}
+
+body {
+  background-color: var(--color-void);
+  color: #e6e9f2;
+}
+
+/* Tabular figures for all numeric readouts */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
