@@ -13,6 +13,7 @@
     "@privy-io/react-auth": "^3.36.1",
     "@privy-io/server-auth": "^1.32.0",
     "next": "^15.5.22",
+    "permissionless": "^0.2.57",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },

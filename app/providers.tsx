@@ -1,6 +1,7 @@
 "use client";
 
 import { PrivyProvider } from "@privy-io/react-auth";
+import { SmartWalletsProvider } from "@privy-io/react-auth/smart-wallets";
 
 /**
  * loginMethods includes "wallet" as the external-wallet fallback tab
@@ -36,7 +37,18 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         },
       }}
     >
-      {children}
+      {/*
+        CR-284 M4 — Smart Wallets (ERC-4337). Mounting this provider is what
+        makes `useSmartWallets().client` available; the signer factory
+        (lib/hypermid-signer.ts) prefers it over the embedded EOA so gas is
+        sponsored by the paymaster and the user pays NOTHING.
+
+        ⚠️ Requires Smart Wallets ENABLED + a FUNDED PAYMASTER in the Privy
+        dashboard. Without that, `client` stays undefined and the app degrades
+        cleanly to the embedded EOA (user pays their own gas) — which is why
+        this is safe to mount before the dashboard work is done.
+      */}
+      <SmartWalletsProvider>{children}</SmartWalletsProvider>
     </PrivyProvider>
   );
 }
