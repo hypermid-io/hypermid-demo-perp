@@ -66,6 +66,35 @@ function smartAddressOf(client: unknown): string | undefined {
 }
 
 /**
+ * PRIMITIVES ONLY — safe to call during render.
+ *
+ * `resolveHypermidSigner` returns a fresh object every call, so putting its
+ * result in state via an effect keyed on Privy's `smart` / `wallets` is an
+ * infinite render loop: both are new references each render, the effect
+ * re-fires, `setState` gets a new object, and React re-renders forever
+ * ("Maximum update depth exceeded"). Same class of bug as CR-285 and the SUI
+ * bridge.
+ *
+ * So the UI reads this instead. It returns only strings/booleans, which React
+ * compares by value — no state, no effect, nothing to loop on. The real signer
+ * is built at CLICK time inside the pay handler, which is also strictly more
+ * correct: a signer captured during render can close over a Privy client that
+ * has since been replaced (e.g. after a chain switch).
+ */
+export function describeSigner(
+  smart: SmartLike | undefined,
+  wallets: readonly PrivyWalletLike[] | undefined,
+): { kind: SignerKind; gasless: boolean; address: string } | null {
+  const smartAddr = smartAddressOf(smart?.client);
+  if (smart?.client && smartAddr) {
+    return { kind: "smart", gasless: true, address: smartAddr };
+  }
+  const list = wallets ?? [];
+  const embedded = list.find((w) => w.walletClientType === "privy") ?? list[0];
+  return embedded ? { kind: "eoa", gasless: false, address: embedded.address } : null;
+}
+
+/**
  * Prefer the sponsored Smart Wallet; fall back to the embedded EOA.
  *
  * @param smart  `useSmartWallets()` — may be undefined if the provider isn't mounted.

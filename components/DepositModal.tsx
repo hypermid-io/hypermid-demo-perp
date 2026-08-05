@@ -7,7 +7,7 @@ import Modal from "./Modal";
 import HypermidEmbed from "./HypermidEmbed";
 import { addToBalance } from "@/lib/balance";
 import { formatUsdc } from "@/lib/formatting";
-import { resolveHypermidSigner, type ResolvedSigner } from "@/lib/hypermid-signer";
+import { resolveHypermidSigner, describeSigner } from "@/lib/hypermid-signer";
 
 // ─── CR-284 M4 ───────────────────────────────────────────────────────────────
 // Headless deposit: signs with the user's Privy wallet directly — no iframe, no
@@ -43,7 +43,6 @@ export default function DepositModal({
   const [credited, setCredited] = useState("0");
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState<string>("");
-  const [resolved, setResolved] = useState<ResolvedSigner | null>(null);
   const started = useRef(false); // guard against StrictMode double-effect
 
   // Mint the session up front in BOTH modes — the id is what the SDK needs.
@@ -73,13 +72,15 @@ export default function DepositModal({
     })();
   }, [getAccessToken]);
 
-  // Resolve which Privy wallet backs the signer, so the UI can SHOW whether
-  // this run is gasless — the M4 acceptance test should be readable on screen,
-  // not inferred from a block explorer.
-  useEffect(() => {
-    if (!HEADLESS_ENABLED) return;
-    setResolved(resolveHypermidSigner(smart, wallets));
-  }, [smart, wallets]);
+  // Which Privy wallet backs the signer — PRIMITIVES ONLY, derived during
+  // render. Deliberately NOT state-via-effect: `smart` and `wallets` are new
+  // references every render and `resolveHypermidSigner` returns a fresh object,
+  // so `useEffect(... , [smart, wallets]) -> setState` loops forever
+  // ("Maximum update depth exceeded"). Strings/booleans compare by value, so
+  // there is nothing to loop on. The signer itself is built at CLICK time in
+  // `payHeadless` — also strictly more correct, since a signer captured during
+  // render can close over a Privy client that has since been replaced.
+  const walletInfo = HEADLESS_ENABLED ? describeSigner(smart, wallets) : null;
 
   const credit = (paidAmountBase: string) => {
     // paidAmount is the backend on-chain-VERIFIED delivered amount (base units).
@@ -90,7 +91,14 @@ export default function DepositModal({
   };
 
   async function payHeadless() {
-    if (!checkoutId || !resolved) return;
+    if (!checkoutId) return;
+    // Resolve at CLICK time — never from render-time state.
+    const resolved = resolveHypermidSigner(smart, wallets);
+    if (!resolved) {
+      setError("No Privy wallet available — log in again.");
+      setPhase("error");
+      return;
+    }
     setPhase("paying");
     setError(null);
     try {
@@ -140,13 +148,13 @@ export default function DepositModal({
             className="tnum w-full rounded-xl border border-edge bg-transparent px-4 py-3 text-center font-mono text-2xl text-white outline-none focus:border-accent"
           />
 
-          {resolved ? (
+          {walletInfo ? (
             <p className="mt-3 text-center font-mono text-[10px] text-muted">
               signing with{" "}
               <span className="text-slate-200">
-                {resolved.kind === "smart" ? "PRIVY SMART WALLET" : "PRIVY EMBEDDED WALLET"}
+                {walletInfo.kind === "smart" ? "PRIVY SMART WALLET" : "PRIVY EMBEDDED WALLET"}
               </span>
-              {resolved.gasless && <span className="text-up"> · GAS SPONSORED</span>}
+              {walletInfo.gasless && <span className="text-up"> · GAS SPONSORED</span>}
             </p>
           ) : (
             <p className="mt-3 text-center font-mono text-[10px] text-down">
@@ -156,7 +164,7 @@ export default function DepositModal({
 
           <button
             onClick={payHeadless}
-            disabled={!resolved || !amount.trim()}
+            disabled={!walletInfo || !amount.trim()}
             className="mt-6 w-full rounded-xl bg-accent px-8 py-3 text-sm font-semibold text-white transition hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-40"
           >
             Deposit
@@ -172,7 +180,7 @@ export default function DepositModal({
           <p className="font-mono text-xs tracking-widest text-muted">
             {status ? status.toUpperCase() + "…" : "PAYING…"}
           </p>
-          {resolved?.gasless && (
+          {walletInfo?.gasless && (
             <p className="mt-2 font-mono text-[10px] text-up">GAS SPONSORED — YOU PAY NOTHING</p>
           )}
         </div>
