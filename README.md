@@ -94,6 +94,16 @@ M1: publish `@hypermid/checkout/headless`. M4 acceptance test:
 Deposits then sign with the user's Privy embedded wallet — no iframe, no
 Reown. No other file changes.
 
+**Chain declaration is required.** Privy's embedded wallet defaults to Ethereum
+(1) unless `defaultChain` and `supportedChains` are declared in `PrivyProvider`
+config. If the wallet is on chain 1 and the session expects Base (8453), the
+signer's `ensureChain` guard aborts with "did not switch to chain 8453". Set
+both fields to the chain your deposits/withdrawals settle on:
+
+```tsx
+<PrivyProvider config={{ defaultChain: base, supportedChains: [base] }}>
+```
+
 ## Phase 2 (not in this build)
 
 - Webhook-driven ledger (Supabase): `deposit.completed` / `withdrawal.completed`

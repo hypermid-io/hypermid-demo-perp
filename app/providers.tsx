@@ -2,6 +2,7 @@
 
 import { PrivyProvider } from "@privy-io/react-auth";
 import { SmartWalletsProvider } from "@privy-io/react-auth/smart-wallets";
+import { base } from "viem/chains";
 
 /**
  * loginMethods includes "wallet" as the external-wallet fallback tab
@@ -32,6 +33,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       config={{
         loginMethods: ["email", "wallet"],
         appearance: { theme: "dark", accentColor: "#6d7cff" },
+        // CR-284 M4: the embedded wallet must be provisioned on Base (8453),
+        // the deposit/withdrawal chain — else it defaults to Ethereum (1) and
+        // the signer's ensureChain guard aborts ("did not switch to 8453").
+        defaultChain: base,
+        supportedChains: [base],
         embeddedWallets: {
           ethereum: { createOnLogin: "users-without-wallets" },
         },
