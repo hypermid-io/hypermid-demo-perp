@@ -9,7 +9,7 @@
     "start": "next start"
   },
   "dependencies": {
-    "@hypermid/checkout": "0.1.0",
+    "@hypermid/checkout": "^0.2.0",
     "@privy-io/react-auth": "^3.36.1",
     "@privy-io/server-auth": "^1.32.0",
     "next": "^15.5.22",

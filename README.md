@@ -78,13 +78,12 @@ phase 2); the chain holds the omnibus total.
 
 ## CR-284 M4 handoff
 
-`@hypermid/checkout@0.1.0` is iframe-only — there is no `signer` prop. The
-signer-injection surface is the **headless module** (already written as
-`src/headless.ts` in `hypermid-checkout-widget`, unpublished): it drives
-quote → approve → sign → settle against **any EIP-1193 provider** and boots no
-wallet stack.
+`@hypermid/checkout@0.2.0` ships the **headless module** (`/headless`) and
+**adapters** (`/adapters`) alongside the iframe embed. The headless path drives
+quote → approve → sign → settle against **any EIP-1193 provider or signer** and
+boots no wallet stack.
 
-M1: publish `@hypermid/checkout/headless`. M4 acceptance test:
+M4 acceptance test:
 
 1. `npm i @hypermid/checkout@latest`
 2. `components/DepositModal.tsx` → set `HEADLESS_ENABLED = true`
