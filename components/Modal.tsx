@@ -9,13 +9,18 @@ export default function Modal({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const bare = !title;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-edge bg-panel p-5 shadow-2xl"
+        className={
+          bare
+            ? "w-full max-w-md"
+            : "w-full max-w-md rounded-2xl border border-edge bg-panel p-5 shadow-2xl"
+        }
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
