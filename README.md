@@ -18,6 +18,7 @@ Demo bounds: **$5 max deposit / $2 max withdraw**, USDC on Base, production
 cp .env.example .env.local   # fill in the values
 npm install
 npm run dev                  # http://localhost:3000
+# Never run `npm install` while `npm link` is active — it corrupts the lockfile.
 ```
 
 | Env var | Where used | Notes |
