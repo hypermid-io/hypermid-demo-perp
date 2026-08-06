@@ -18,6 +18,7 @@ Demo bounds: **$5 max deposit / $2 max withdraw**, USDC on Base, production
 cp .env.example .env.local   # fill in the values
 npm install
 npm run dev                  # http://localhost:3000
+# Never run `npm install` while `npm link` is active — it corrupts the lockfile.
 ```
 
 | Env var | Where used | Notes |
@@ -78,13 +79,12 @@ phase 2); the chain holds the omnibus total.
 
 ## CR-284 M4 handoff
 
-`@hypermid/checkout@0.1.0` is iframe-only — there is no `signer` prop. The
-signer-injection surface is the **headless module** (already written as
-`src/headless.ts` in `hypermid-checkout-widget`, unpublished): it drives
-quote → approve → sign → settle against **any EIP-1193 provider** and boots no
-wallet stack.
+`@hypermid/checkout@0.2.0` ships the **headless module** (`/headless`) and
+**adapters** (`/adapters`) alongside the iframe embed. The headless path drives
+quote → approve → sign → settle against **any EIP-1193 provider or signer** and
+boots no wallet stack.
 
-M1: publish `@hypermid/checkout/headless`. M4 acceptance test:
+M4 acceptance test:
 
 1. `npm i @hypermid/checkout@latest`
 2. `components/DepositModal.tsx` → set `HEADLESS_ENABLED = true`
@@ -93,6 +93,16 @@ M1: publish `@hypermid/checkout/headless`. M4 acceptance test:
 
 Deposits then sign with the user's Privy embedded wallet — no iframe, no
 Reown. No other file changes.
+
+**Chain declaration is required.** Privy's embedded wallet defaults to Ethereum
+(1) unless `defaultChain` and `supportedChains` are declared in `PrivyProvider`
+config. If the wallet is on chain 1 and the session expects Base (8453), the
+signer's `ensureChain` guard aborts with "did not switch to chain 8453". Set
+both fields to the chain your deposits/withdrawals settle on:
+
+```tsx
+<PrivyProvider config={{ defaultChain: base, supportedChains: [base] }}>
+```
 
 ## Phase 2 (not in this build)
 
