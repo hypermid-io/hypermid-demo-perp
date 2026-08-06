@@ -59,7 +59,7 @@ export default function DepositModal({
   };
 
   return (
-    <Modal title="DEPOSIT · USDC ON BASE" onClose={onClose}>
+    <Modal onClose={onClose}>
       {phase === "creating" && (
         <p className="py-16 text-center font-mono text-xs tracking-widest text-muted">
           CREATING SESSION…
@@ -67,21 +67,16 @@ export default function DepositModal({
       )}
 
       {phase === "ready" && checkoutId && (
-        <>
-          <HypermidEmbed
-            checkoutId={checkoutId}
-            label="Deposit"
-            onSuccess={(p) => credit(p.paidAmount ?? "0")}
-            onError={(p) => {
-              setError(p.reason ?? "Deposit failed");
-              setPhase("error");
-            }}
-            onClose={onClose}
-          />
-          <p className="mt-3 text-center font-mono text-[10px] text-muted">
-            pay with any token · settles to USDC on Base · max $5
-          </p>
-        </>
+        <HypermidEmbed
+          checkoutId={checkoutId}
+          label="Deposit"
+          onSuccess={(p) => credit(p.paidAmount ?? "0")}
+          onError={(p) => {
+            setError(p.reason ?? "Deposit failed");
+            setPhase("error");
+          }}
+          onClose={onClose}
+        />
       )}
 
       {phase === "success" && (
