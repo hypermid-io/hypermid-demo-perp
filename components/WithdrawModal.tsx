@@ -1,15 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { useSmartWallets } from "@privy-io/react-auth/smart-wallets";
 import Modal from "./Modal";
 import HypermidEmbed from "./HypermidEmbed";
 import { subtractFromBalance } from "@/lib/balance";
 import { formatUsdc, isEvmAddress, parseUsdc } from "@/lib/formatting";
+import { resolveHypermidSigner, type ResolvedSigner } from "@/lib/hypermid-signer";
 
 const MAX_WITHDRAW_BASE = 2_000_000n; // mirror of the server-side cap
 
-type Phase = "form" | "creating" | "ready" | "success" | "error";
+// ─── CR-284 M4 ───────────────────────────────────────────────────────────────
+// Headless withdrawal: the fund owner signs from their own Privy wallet.
+//
+// This is a FIXED-SIZING session — `/v1/withdrawal` is created WITH `amount`,
+// so dest_amount is a real value and `pay()` must NOT receive an `amount`.
+// (Deposit is the mirror image: open sizing, amount required.) The SDK rejects
+// either mismatch rather than silently ignoring the input.
+//
+// The destination is partner-supplied and NOT allowlisted server-side, which is
+// exactly why the SDK's pre-send drift guard matters here: it re-reads /public
+// immediately before signing and aborts if `recipient` moved.
+const HEADLESS_ENABLED = true;
+
+type Phase = "form" | "creating" | "paying" | "ready" | "success" | "error";
 
 export default function WithdrawModal({
   userId,
@@ -23,7 +38,11 @@ export default function WithdrawModal({
   onClose: () => void;
 }) {
   const { getAccessToken } = usePrivy();
+  const { wallets } = useWallets();
+  const smart = useSmartWallets();
   const [phase, setPhase] = useState<Phase>("form");
+  const [status, setStatus] = useState<string>("");
+  const [resolved, setResolved] = useState<ResolvedSigner | null>(null);
   const [destination, setDestination] = useState("");
   const [amount, setAmount] = useState("");
   const [checkoutId, setCheckoutId] = useState<string | null>(null);
@@ -72,6 +91,10 @@ export default function WithdrawModal({
         throw new Error(json?.error ?? "Failed to create withdrawal session");
       }
       setCheckoutId(json.checkoutId);
+      if (HEADLESS_ENABLED) {
+        void payHeadless(json.checkoutId);
+        return;
+      }
       setPhase("ready");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create withdrawal session");
@@ -86,6 +109,38 @@ export default function WithdrawModal({
     onDebited();
     setPhase("success");
   };
+
+  // CR-284 M4 — sign the withdrawal from the user's own Privy wallet.
+  // NOTE: no `amount` is passed. The session is FIXED-sized (created with
+  // `amount` server-side), and the SDK rejects a client-supplied amount on a
+  // fixed session rather than ignoring it.
+  async function payHeadless(id: string) {
+    const r = resolveHypermidSigner(smart, wallets);
+    if (!r) {
+      setError("No Privy wallet available — log in again.");
+      setPhase("error");
+      return;
+    }
+    setResolved(r);
+    setPhase("paying");
+    try {
+      const { HypermidCheckout } = await import("@hypermid/checkout/headless");
+      const result = await HypermidCheckout.pay({
+        checkoutId: id,
+        provider: r.signer,
+        onStatus: (s) => setStatus(s),
+      });
+      if (result.status === "completed") {
+        complete();
+      } else {
+        setError(result.reason ?? "Withdrawal failed");
+        setPhase("error");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Withdrawal failed");
+      setPhase("error");
+    }
+  }
 
   return (
     <Modal title="WITHDRAW · USDC ON BASE" onClose={onClose}>
@@ -140,6 +195,20 @@ export default function WithdrawModal({
         <p className="py-16 text-center font-mono text-xs tracking-widest text-muted">
           CREATING SESSION…
         </p>
+      )}
+
+      {phase === "paying" && (
+        <div className="py-16 text-center">
+          <p className="font-mono text-xs tracking-widest text-muted">
+            {status ? status.toUpperCase() + "\u2026" : "SENDING\u2026"}
+          </p>
+          {resolved && (
+            <p className="mt-2 font-mono text-[10px] text-muted">
+              {resolved.kind === "smart" ? "PRIVY SMART WALLET" : "PRIVY EMBEDDED WALLET"}
+              {resolved.gasless && <span className="text-up"> \u00b7 GAS SPONSORED</span>}
+            </p>
+          )}
+        </div>
       )}
 
       {phase === "ready" && checkoutId && (
