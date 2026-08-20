@@ -1,73 +1,156 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
-import type {
-  HypermidCheckoutError,
-  HypermidCheckoutSuccess,
-} from "@hypermid/checkout";
+import { useEffect, useId, useRef, useState } from "react";
+import { useWallets } from "@privy-io/react-auth";
+import { createParentBridge, type ParentBridge } from "@/lib/checkout-connect";
 
 /**
- * Thin React wrapper over @hypermid/checkout's imperative embed.
+ * Hypermid Checkout embed with S20-41 bridge support.
  *
- * The published package (v0.1.0) is not a React component — it mounts the
- * hosted checkout app (app.hypermid.io) in a sandboxed iframe via
- * HypermidCheckout.init({ containerId, checkoutId, … }). Wallet connect
- * (Reown) lives inside that iframe. The dynamic import keeps all DOM code
- * out of SSR.
+ * When the user has a Privy wallet connected, this component mounts the
+ * checkout iframe with ?bridge=1 and creates a ParentBridge that routes
+ * EVM signatures through the merchant's page — no second connect step.
  *
- * Post-CR-284 this component is bypassed entirely in favor of the headless
- * EIP-1193 flow — see the handoff note in DepositModal.tsx.
+ * Falls back to the standard iframe embed (no bridge) when:
+ * - No wallet is connected
+ * - The wallet has no EIP-1193 provider
+ * - The bridge fails to initialize
+ *
+ * Message logging: every postMessage in both directions is logged to
+ * console with correlation ids for debugging.
  */
+
+const CHECKOUT_ORIGIN = "https://checkout.hypermid.io";
+const PROTOCOL_VERSION = 1;
+
+interface HypermidEmbedProps {
+  checkoutId: string;
+  label?: string;
+  onSuccess?: (payload: { paidAmount?: string; txHash?: string }) => void;
+  onError?: (payload: { reason?: string }) => void;
+  onClose?: () => void;
+}
+
 export default function HypermidEmbed({
   checkoutId,
   label,
   onSuccess,
   onError,
   onClose,
-}: {
-  checkoutId: string;
-  label?: string;
-  onSuccess?: (payload: HypermidCheckoutSuccess) => void;
-  onError?: (payload: HypermidCheckoutError) => void;
-  onClose?: () => void;
-}) {
+}: HypermidEmbedProps) {
   const containerId = `hm-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const callbacks = useRef({ onSuccess, onError, onClose });
   callbacks.current = { onSuccess, onError, onClose };
 
+  const { wallets } = useWallets();
+  const wallet = wallets[0];
+  const [bridgeState, setBridgeState] = useState<"idle" | "ready" | "error">("idle");
+  const bridgeRef = useRef<ParentBridge | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
   useEffect(() => {
-    let instance: { destroy(): void } | null = null;
     let cancelled = false;
 
-    void import("@hypermid/checkout").then(({ HypermidCheckout }) => {
-      if (cancelled) return;
-      instance = HypermidCheckout.init({
-        containerId,
-        checkoutId,
-        theme: "dark",
-        label,
-        // Match the demo palette (D-18 theming tokens)
-        accent: "6d7cff",
-        bgPage: "0c1017",
-        bgCard: "12161f",
-        border: "1d2432",
-        textPrimary: "e6e9f2",
-        textMuted: "8b93a7",
-        borderRadius: "16px",
-        width: "100%",
-        height: "600px",
-        onSuccess: (p) => callbacks.current.onSuccess?.(p),
-        onError: (p) => callbacks.current.onError?.(p),
-        onClose: () => callbacks.current.onClose?.(),
-      });
-    });
+    async function initBridge() {
+      if (!wallet) {
+        console.log("[bridge] No wallet connected — using standard iframe");
+        return;
+      }
+
+      try {
+        const provider = await wallet.getEthereumProvider();
+        if (!provider) {
+          console.log("[bridge] Wallet has no Ethereum provider");
+          return;
+        }
+
+        const iframe = iframeRef.current;
+        if (!iframe) return;
+
+        console.log("[bridge] Creating ParentBridge with address:", wallet.address);
+
+        const bridge = createParentBridge({
+          iframe,
+          provider,
+          address: wallet.address as `0x${string}`,
+          chainId: typeof wallet.chainId === "string" ? parseInt(wallet.chainId, 10) : (wallet.chainId ?? 8453),
+          onReady: () => {
+            console.log("[bridge] ParentBridge ready — iframe received init");
+            setBridgeState("ready");
+          },
+          onPaymentComplete: (checkoutId, txHash, paidAmount) => {
+            console.log("[bridge] Payment complete:", { checkoutId, txHash, paidAmount });
+            callbacks.current.onSuccess?.({ paidAmount, txHash });
+          },
+          onError: (checkoutId, reason) => {
+            console.error("[bridge] Iframe error:", { checkoutId, reason });
+            callbacks.current.onError?.({ reason });
+          },
+        });
+
+        bridge.start();
+        bridgeRef.current = bridge;
+
+        // Note: postMessage logging is handled by the ParentBridge class
+        // which logs all messages via its internal postToIframe method.
+
+        if (cancelled) {
+          bridge.stop();
+          return;
+        }
+      } catch (err) {
+        console.error("[bridge] Failed to initialize:", err);
+        setBridgeState("error");
+      }
+    }
+
+    initBridge();
 
     return () => {
       cancelled = true;
-      instance?.destroy();
+      bridgeRef.current?.stop();
+      bridgeRef.current = null;
     };
-    // containerId is stable per mount; remount only when the session changes
-  }, [checkoutId, containerId, label]);
+  }, [wallet, checkoutId]);
 
-  return <div id={containerId} className="w-full" />;
+  // Build the iframe URL with bridge flag and theming
+  const iframeUrl = (() => {
+    const params = new URLSearchParams();
+    params.set("checkoutId", checkoutId);
+    params.set("bridge", "1");
+    if (label) params.set("label", label);
+    params.set("theme", "dark");
+    params.set("accent", "6d7cff");
+    params.set("bgPage", "0c1017");
+    params.set("bgCard", "12161f");
+    params.set("border", "1d2432");
+    params.set("textPrimary", "e6e9f2");
+    params.set("textMuted", "8b93a7");
+    params.set("borderRadius", "16");
+    return `${CHECKOUT_ORIGIN}/checkout?${params.toString()}`;
+  })();
+
+  return (
+    <div id={containerId} className="w-full">
+      <iframe
+        ref={iframeRef}
+        src={iframeUrl}
+        title="Hypermid Checkout"
+        className="w-full"
+        style={{ height: "600px", border: "none", borderRadius: "16px" }}
+        allow="clipboard-write; payment; web-share"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-top-navigation-by-user-activation"
+      />
+      {bridgeState === "ready" && (
+        <p className="mt-2 text-center font-mono text-[10px] text-accent">
+          Bridge active — using connected wallet
+        </p>
+      )}
+      {bridgeState === "error" && (
+        <p className="mt-2 text-center font-mono text-[10px] text-down">
+          Bridge failed — fallback to standard connect
+        </p>
+      )}
+    </div>
+  );
 }
