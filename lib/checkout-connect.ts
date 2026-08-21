@@ -205,7 +205,7 @@ export class ParentBridge {
   }
 
   private async handleSignRequest(msg: SignRequestMessage): Promise<void> {
-    const apiBase = this.opts.apiBase ?? "https://api.hypermid.io";
+    const apiBase = this.opts.apiBase ?? "https://server.hypermid.io";
 
     try {
       const publicRes = await fetch(
@@ -216,17 +216,14 @@ export class ParentBridge {
       }
       void (await publicRes.json());
 
+      const quoteParams = new URLSearchParams({
+        checkoutId: msg.checkoutId,
+        payToken: msg.tokenAddress ?? "",
+        payChain: String(msg.chainId),
+        fromAddress: this.opts.address,
+      });
       const quoteRes = await fetch(
-        `${apiBase}/v1/checkout/${encodeURIComponent(msg.checkoutId)}/quote`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fromAddress: this.opts.address,
-            chainId: msg.chainId,
-            tokenAddress: msg.tokenAddress,
-          }),
-        },
+        `${apiBase}/v1/quote?${quoteParams.toString()}`,
       );
       if (!quoteRes.ok) {
         throw new Error(`Failed to fetch quote: ${quoteRes.status}`);
