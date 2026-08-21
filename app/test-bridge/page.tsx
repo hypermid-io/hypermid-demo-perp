@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createParentBridge, type ParentBridge } from "@/lib/checkout-connect";
 
 const MOCK_ADDRESS = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb";
@@ -31,13 +31,17 @@ export default function TestBridgePage() {
   const [status, setStatus] = useState<"idle" | "waiting" | "ready" | "signed" | "error">("idle");
   const bridgeRef = useRef<ParentBridge | null>(null);
 
+  // Build iframe URL with a real checkout session
+  const [checkoutUrl, setCheckoutUrl] = useState<string>("");
+
   function log(msg: string) {
     setLogs((prev) => [...prev, `[${new Date().toISOString().split("T")[1].slice(0, 8)}] ${msg}`]);
   }
 
-  useEffect(() => {
+  const initBridge = useCallback(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
+    if (bridgeRef.current) return; // already initialized
 
     log("Creating ParentBridge...");
     const bridge = createParentBridge({
@@ -63,15 +67,7 @@ export default function TestBridgePage() {
     bridgeRef.current = bridge;
     setStatus("waiting");
     log("Bridge started, waiting for iframe ready...");
-
-    return () => {
-      bridge.stop();
-    };
   }, []);
-
-  // Build iframe URL with a real checkout session
-  // We'll create one via API call
-  const [checkoutUrl, setCheckoutUrl] = useState<string>("");
 
   useEffect(() => {
     async function createSession() {
@@ -129,6 +125,7 @@ export default function TestBridgePage() {
         <iframe
           ref={iframeRef}
           src={checkoutUrl}
+          onLoad={initBridge}
           className="w-full rounded-xl"
           style={{ height: "600px", border: "1px solid #1d2432" }}
           allow="clipboard-write; payment; web-share"
