@@ -43,41 +43,38 @@ type ParentResponseMessage =
   | { type: "hypermid:sign-result"; version: typeof PROTOCOL_VERSION; id: string; txHash: string }
   | { type: "hypermid:sign-rejected"; version: typeof PROTOCOL_VERSION; id: string; reason: string };
 
-// ─── Trusted contract allowlist (copied from packages/wallet/src/trustedContracts.ts) ──
+// ─── Trusted contract allowlist (copied verbatim from packages/wallet/src/trustedContracts.ts)
+// DO NOT EDIT BY HAND — update from source only.
 
-const LIFI_DIAMOND_MAINNET = "0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE";
-const LIFI_DIAMOND_BASE = "0x4D0A805e70D183c0E805cC5b2dEDb0E05d5E2b82";
-const LIFI_DIAMOND_BSC = "0x4D0A805e70D183c0E805cC5b2dEDb0E05d5E2b82";
-const LIFI_DIAMOND_POLYGON = "0x4D0A805e70D183c0E805cC5b2dEDb0E05d5E2b82";
-const LIFI_DIAMOND_ARBITRUM = "0x4D0A805e70D183c0E805cC5b2dEDb0E05d5E2b82";
-const LIFI_DIAMOND_OPTIMISM = "0x4D0A805e70D183c0E805cC5b2dEDb0E05d5E2b82";
-
-const TRUSTED_CONTRACTS = new Set<string>([
-  LIFI_DIAMOND_MAINNET.toLowerCase(),
-  LIFI_DIAMOND_BASE.toLowerCase(),
-  LIFI_DIAMOND_BSC.toLowerCase(),
-  LIFI_DIAMOND_POLYGON.toLowerCase(),
-  LIFI_DIAMOND_ARBITRUM.toLowerCase(),
-  LIFI_DIAMOND_OPTIMISM.toLowerCase(),
+const LIFI_DIAMONDS = new Set<string>([
+  "0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE".toLowerCase(), // Eth/OP/Polygon/Arb/Base
+  "0x864b314D4C5a0399368609581d3E8933a63b9232".toLowerCase(), // Unichain
 ]);
 
-function isTrustedLifiDiamond(address: string): boolean {
-  return TRUSTED_CONTRACTS.has(address.toLowerCase());
+function isTrustedLifiDiamond(address: string | undefined): boolean {
+  if (!address) return false;
+  return LIFI_DIAMONDS.has(address.toLowerCase());
+}
+
+class ContractNotAllowedError extends Error {
+  constructor(to: string, kind: "inbound" | "outbound") {
+    super(
+      `Refusing to sign a transaction to an unknown contract (${to}). ` +
+        (kind === "outbound"
+          ? "Expected the Hypermid OutboundSender or USDCh contract on PulseChain."
+          : "Expected LiFi Diamond or a Hypermid Sender contract.") +
+        " This is a safety check.",
+    );
+    this.name = "ContractNotAllowedError";
+  }
 }
 
 function assertContractAllowed(
-  address: string | undefined,
-  _direction: string,
-  allowlist: (addr: string) => boolean,
+  to: string | undefined,
+  kind: "inbound" | "outbound",
+  isTrusted: (addr: string | undefined) => boolean = isTrustedLifiDiamond,
 ): void {
-  if (!address) {
-    throw new Error("Transaction has no destination contract — refusing to sign.");
-  }
-  if (!allowlist(address)) {
-    throw new Error(
-      `Destination contract ${address} is not in the trusted allowlist — refusing to sign.`,
-    );
-  }
+  if (!isTrusted(to)) throw new ContractNotAllowedError(to ?? "<undefined>", kind);
 }
 
 // ─── ParentBridge ───────────────────────────────────────────────────────────
