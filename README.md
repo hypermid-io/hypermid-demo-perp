@@ -10,7 +10,7 @@ withdrawals end-to-end**. Three purposes:
 3. **Partner reference implementation** — fork it and adapt.
 
 Demo bounds: **$5 max deposit / $2 max withdraw**, USDC on Base, production
-`api.hypermid.io`. Positions are simulated; there is no real trading.
+`server.hypermid.io`. Positions are simulated; there is no real trading.
 
 ## Quickstart
 
@@ -25,7 +25,7 @@ npm run dev                  # http://localhost:3000
 | `HYPERMID_SK` | server only (`/api/create-*`) | `sk_live_…`. **Never** `NEXT_PUBLIC_`. |
 | `PRIVY_APP_SECRET` | server only (`/api/create-*`) | Verifies user JWTs before touching `HYPERMID_SK`. |
 | `NEXT_PUBLIC_PRIVY_APP_ID` | client + server | From the Privy dashboard. |
-| `NEXT_PUBLIC_HYPERMID_API_URL` | server | Defaults to `https://api.hypermid.io`. |
+| `NEXT_PUBLIC_HYPERMID_API_URL` | server | Defaults to `https://server.hypermid.io`. |
 | `MIDDLEWARE_PASSWORD` | edge middleware | Site-wide basic auth (any username). Set in prod. |
 | `HYPERMID_WEBHOOK_SECRET` | server (`/api/webhook`) | Phase 2. Unset → route returns 503. |
 
@@ -39,19 +39,19 @@ Privy login (email / external wallet)
 Deposit click
   ── Bearer <privy JWT> ──────────────▶ /api/create-deposit
                                         verifies JWT (PRIVY_APP_SECRET)
-                                        ── Bearer sk_live ───────────▶ POST /v1/deposit
+                                        ── Bearer sk_live ───────────▶ POST /v1/payments/deposit
                                           { recipient: TREASURY,        (recipient must be on the
                                             maxAmount: 5_000_000 }       partner payout allowlist)
                                         ◀──────────── { id: "co_…" } ──
   ◀────────────── { checkoutId } ──────
-<HypermidEmbed checkoutId>              (iframe: app.hypermid.io — wallet
+<HypermidEmbed checkoutId>              (iframe: pay.hypermid.io — wallet
   user pays with any token               connect + signing happen inside)
   ◀── onSuccess({ paidAmount }) ──      backend on-chain-VERIFIED
 localStorage balance += paidAmount
 ```
 
 Withdrawal mirrors it: a small form (destination + amount) →
-`/api/create-withdrawal` → `POST /v1/withdrawal` → same embed. The withdrawal
+`/api/create-withdrawal` → `POST /v1/payments/withdrawal` → same embed. The withdrawal
 destination is **not** allowlisted on Hypermid's side (by design, CR-283 B):
 the signing wallet's preview is the authorization gate, and **the signing
 wallet funds the withdrawal** — in this demo that's the user's own connected

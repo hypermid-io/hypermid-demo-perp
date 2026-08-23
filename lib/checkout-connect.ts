@@ -6,14 +6,31 @@
  * npm link / file: dependencies pull the monorepo's React tree and cause
  * hook failures (duplicate React).
  *
- * Source: packages/checkout-connect/src/parent.ts in offchain-agents
- * Keep in sync with any security-critical changes there.
+ * Source: packages/checkout-connect/src/parent.ts in offchain-agents.
+ * NOTE (S20-80): the upstream package is ALSO stale — it still defaults to
+ * the legacy API host and calls the non-existent per-id `POST /v1/payments/:id/quote`.
+ * The fixes here (server.hypermid.io host, `pay.hypermid.io` origin, the real
+ * `GET /v1/payments/quote` contract) should be ported back to it.
  */
 
 import type { Address, TransactionRequest } from "viem";
 
-export const IFRAME_ORIGIN = "https://checkout.hypermid.io" as const;
+/**
+ * The checkout iframe's origin. Env-driven (default `https://pay.hypermid.io`)
+ * so a service rename never again requires a code change here — this is the
+ * SECOND such rename (the prior checkout host had a different name). It stays a single, exact
+ * origin, NOT a wildcard: the bridge compares `event.origin` against it to
+ * reject forged parent↔iframe messages, and loosening it to `*` is how S20-52
+ * dropped every message. Env lets the merchant point at their own host without
+ * weakening that equality check.
+ */
+export const IFRAME_ORIGIN =
+  process.env.NEXT_PUBLIC_HYPERMID_CHECKOUT_ORIGIN ?? "https://pay.hypermid.io";
 export const PROTOCOL_VERSION = 1 as const;
+
+/** Native-asset sentinel the checkout backend expects as `payToken` for a
+ *  native (gas-token) source — mirrors `NATIVE_SENTINEL` in apps/checkout. */
+const NATIVE_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 // ─── Types (copied from packages/checkout-connect/src/types.ts) ────────────
 
@@ -208,36 +225,51 @@ export class ParentBridge {
   }
 
   private async handleSignRequest(msg: SignRequestMessage): Promise<void> {
-    const apiBase = this.opts.apiBase ?? "https://api.hypermid.io";
+    const apiBase = this.opts.apiBase ?? "https://server.hypermid.io";
 
     try {
+      // 1. Verify the session exists / is payable (recipient is bound server-side).
       const publicRes = await fetch(
-        `${apiBase}/v1/checkout/${encodeURIComponent(msg.checkoutId)}/public`,
+        `${apiBase}/v1/payments/${encodeURIComponent(msg.checkoutId)}/public`,
       );
       if (!publicRes.ok) {
         throw new Error(`Failed to fetch checkout session: ${publicRes.status}`);
       }
       void (await publicRes.json());
 
-      const quoteRes = await fetch(
-        `${apiBase}/v1/checkout/${encodeURIComponent(msg.checkoutId)}/quote`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fromAddress: this.opts.address,
-            chainId: msg.chainId,
-            tokenAddress: msg.tokenAddress,
-          }),
-        },
-      );
+      // 2. Fetch the executable quote. The real endpoint (post-#266) is a GET
+      //    with QUERY params — `GET /v1/payments/quote?checkoutId&payToken&payChain
+      //    &fromAddress` — NOT the per-id POST quote this bridge used
+      //    to call, which never existed (S20-56). Native sources send the
+      //    NATIVE_SENTINEL as `payToken`.
+      //
+      //    LIMITATION (S20-80): this sign-request protocol carries no amount, so
+      //    an OPEN-amount (deposit) session — which needs `destAmount`/`amountIn`
+      //    — returns HTTP 400 here; and a SAME-token, SAME-chain payment returns
+      //    `transactionRequest: null` (a direct transfer the payer sends without a
+      //    router, which this LiFi-Diamond-only bridge can't represent). Both are
+      //    surfaced as clear errors rather than a silent wrong call. See the
+      //    S20-80 report: the plain embed (widget owns its own wallet) is the
+      //    path that actually settles those, and the recommended integration.
+      const quoteUrl = new URL(`${apiBase}/v1/payments/quote`);
+      quoteUrl.searchParams.set("checkoutId", msg.checkoutId);
+      quoteUrl.searchParams.set("payToken", msg.tokenAddress ?? NATIVE_SENTINEL);
+      quoteUrl.searchParams.set("payChain", String(msg.chainId));
+      quoteUrl.searchParams.set("fromAddress", this.opts.address);
+
+      const quoteRes = await fetch(quoteUrl.toString());
       if (!quoteRes.ok) {
-        throw new Error(`Failed to fetch quote: ${quoteRes.status}`);
+        const body = await quoteRes.text().catch(() => "");
+        throw new Error(`Failed to fetch quote: ${quoteRes.status} ${body}`.trim());
       }
       const quote = (await quoteRes.json()) as QuoteResponse;
 
       if (!quote.transactionRequest) {
-        throw new Error("Quote returned no transaction request.");
+        throw new Error(
+          "Quote returned no transactionRequest — a same-token same-chain " +
+            "payment settles as a direct transfer this bridge does not build. " +
+            "Use the standard embed for this pay-token.",
+        );
       }
 
       const tx = quote.transactionRequest;

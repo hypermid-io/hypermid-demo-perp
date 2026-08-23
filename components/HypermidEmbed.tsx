@@ -20,7 +20,10 @@ import { createParentBridge, type ParentBridge } from "@/lib/checkout-connect";
  * console with correlation ids for debugging.
  */
 
-const CHECKOUT_ORIGIN = "https://checkout.hypermid.io";
+// The payments checkout host (renamed; the old host name is retired). Env-driven so
+// a rename never needs a code change; defaults to the live host.
+const CHECKOUT_ORIGIN =
+  process.env.NEXT_PUBLIC_HYPERMID_CHECKOUT_ORIGIN ?? "https://pay.hypermid.io";
 const PROTOCOL_VERSION = 1;
 
 interface HypermidEmbedProps {
@@ -126,7 +129,9 @@ export default function HypermidEmbed({
     params.set("border", "1d2432");
     params.set("textPrimary", "e6e9f2");
     params.set("textMuted", "8b93a7");
-    params.set("borderRadius", "16");
+    // NOTE: the checkout widget has no `borderRadius` theme param (only
+    // theme/accent/bgPage/bgCard/border/textPrimary/textMuted/font) — it was
+    // silently ignored, so it's dropped rather than demonstrated to merchants.
     return `${CHECKOUT_ORIGIN}/checkout?${params.toString()}`;
   })();
 
