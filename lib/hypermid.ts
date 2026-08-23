@@ -7,7 +7,7 @@
  */
 
 const API_URL =
-  process.env.NEXT_PUBLIC_HYPERMID_API_URL ?? "https://api.hypermid.io";
+  process.env.NEXT_PUBLIC_HYPERMID_API_URL ?? "https://server.hypermid.io";
 
 // ── Demo constants ────────────────────────────────────────────────────────────
 export const CHAIN_ID = 8453; // Base
@@ -31,7 +31,7 @@ interface CreateSessionResult {
 }
 
 async function createSession(
-  path: "/v1/deposit" | "/v1/withdrawal",
+  path: "/v1/payments/deposit" | "/v1/payments/withdrawal",
   body: Record<string, unknown>,
 ): Promise<CreateSessionResult> {
   const sk = process.env.HYPERMID_SK;
@@ -68,7 +68,7 @@ async function createSession(
 export function createDepositSession(opts: {
   privyUserId: string;
 }): Promise<CreateSessionResult> {
-  return createSession("/v1/deposit", {
+  return createSession("/v1/payments/deposit", {
     token: USDC_BASE,
     chain: CHAIN_ID,
     recipient: TREASURY_ADDRESS,
@@ -97,7 +97,7 @@ export function createWithdrawalSession(opts: {
   if (BigInt(opts.amountBase) > BigInt(MAX_WITHDRAW_BASE)) {
     throw new Error("Amount exceeds the 2 USDC demo cap");
   }
-  return createSession("/v1/withdrawal", {
+  return createSession("/v1/payments/withdrawal", {
     token: USDC_BASE,
     chain: CHAIN_ID,
     recipient: opts.destination,

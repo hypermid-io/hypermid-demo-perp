@@ -8,9 +8,11 @@ import {
   PROTOCOL_VERSION,
 } from "@/lib/checkout-connect";
 
-const CHECKOUT_ORIGIN = "https://checkout.hypermid.io";
+// The checkout iframe host is the same origin the bridge pins — reuse it rather
+// than keep a second constant that can drift out of sync on a rename.
+const CHECKOUT_ORIGIN = IFRAME_ORIGIN;
 const API_BASE =
-  process.env.NEXT_PUBLIC_HYPERMID_API_URL ?? "https://api.hypermid.io";
+  process.env.NEXT_PUBLIC_HYPERMID_API_URL ?? "https://server.hypermid.io";
 
 type EthereumProvider = {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
